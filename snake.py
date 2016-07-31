@@ -153,6 +153,9 @@ class cMap():
 	
 	def generateFood(self):
 		coor = self.coordinateUnoccupied()
+		if not coor:
+			return
+		
 		t = int(random() * len(coor))
 		x, y = coor[t][0], coor[t][1]
 		newFood = cFood()
