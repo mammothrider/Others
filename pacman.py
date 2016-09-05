@@ -124,6 +124,9 @@ class cMonster(cMovingBody):
 		#in frightened mode, monster runs on random
 		self.state = "Chase"
 		self.scatterPosition = [0, 0]
+		self.lastTimer = 0
+		self.interval = {"Chase":20, "Scatter":7, "Frightened":20}
+		self.scatterTime = 0
 		
 	
         
@@ -200,16 +203,34 @@ class cMonster(cMovingBody):
 		pass
 	
 	def ai(self, map):
-		if state == "Chase":
+		if self.state == "Chase":
 			tmp = map.pacman.getPosition()
 			return self.dfsPathFinding(tmp[0], tmp[1], map)
-		elif state == "Scatter":
+		elif self.state == "Scatter":
 			return self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
-		elif state == "Frightened":
+		elif self.state == "Frightened":
 			return self.frightenedPathFinding(map)
 		
 		return
 			
+	def timer(self):
+		curTimer = time.time()
+		tmpTimer = curTimer - self.lastTimer
+		
+		if self.interval[self.state] > tmpTimer:
+			return
+		
+		if self.state == "Chase" and self.interval["Scatter"] > 0:
+			self.setState("Scatter")
+		elif self.state == "Scatter":
+			self.scatterTime += 1
+			if self.scatterTime == 2:
+				self.interval["Scatter"] = 5
+			elif self.scatterTime >= 4:
+				self.interval["Scatter"] = 0
+		else:
+			#######
+		
 		
 	def setScatterPosition(self, *p):
 		self.scatterPosition[0] = p[0]
