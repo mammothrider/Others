@@ -124,9 +124,12 @@ class cMonster(cMovingBody):
 		#in frightened mode, monster runs on random
 		self.state = "Chase"
 		self.scatterPosition = [0, 0]
-		self.lastTimer = 0
-		self.interval = {"Chase":20, "Scatter":7, "Frightened":20}
 		self.scatterTime = 0
+		
+		
+		self.timer = cTimer()
+		self.timer.initialTimer()
+		self.timer.timerStart(20)
 		
 	
         
@@ -213,23 +216,24 @@ class cMonster(cMovingBody):
 		
 		return
 			
-	def timer(self):
-		curTimer = time.time()
-		tmpTimer = curTimer - self.lastTimer
-		
-		if self.interval[self.state] > tmpTimer:
+	def changeState(self):
+		if not self.timer.isFinished():
 			return
-		
-		if self.state == "Chase" and self.interval["Scatter"] > 0:
+
+		if self.state == "Chase" and self.scatterTime < 4: # change from Chase mode to scatter mode
+			if self.scatterTime < 2:
+				self.timerStart(7)
+			else:
+				self.timerStart(5)
 			self.setState("Scatter")
 		elif self.state == "Scatter":
 			self.scatterTime += 1
-			if self.scatterTime == 2:
-				self.interval["Scatter"] = 5
-			elif self.scatterTime >= 4:
-				self.interval["Scatter"] = 0
+			self.timerStart(20)
+			self.setState("Chase")
 		else:
-			#######
+			pass
+			
+		return
 		
 		
 	def setScatterPosition(self, *p):
@@ -238,7 +242,37 @@ class cMonster(cMovingBody):
         
 class cDeadMonster(cMovingBody):
     pass
-    
+	
+class cTimer():
+	def __init__(self):
+		self.startTime = 0
+		self.interval = 0
+		self.pauseTime = 0
+		
+	def initialTimer(self):
+		self.startTime = 0
+		self.interval = 0
+		self.pauseTime = 0
+		
+	def setInterval(self, t):
+		self.interval = t
+		
+	def timerStart(self, interval = 20):
+		self.setInterval(interval)
+		self.startTime = time.time()
+		
+	def isFinished(self):
+		if self.pauseTime > 0:
+			return False
+		return time.time() - self.startTime > self.interval
+		
+	def timerPause(self):
+		self.pauseTime = time.time()
+		
+	def timerContinue(self):
+		self.interval += time.time() - self.pauseTime
+		self.pauseTime = 0
+		
 class cFood(cBody):
     def __init__(self):
         cBody.__init__(self)
