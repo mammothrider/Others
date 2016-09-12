@@ -9,6 +9,7 @@ import time
 #2016.4.12
 
 _debug_ = 0
+_statedebug_ = 1
 
 class cBody(object):
     def __init__(self):
@@ -37,7 +38,9 @@ class cMonsterGenerator(cBody):
         #four monster is needed, their color should be red, cyan, pink, orange
         #0 means ready to generate, -1 means cooldown, 1 means has been generated
         cBody.__init__(self)
-        self.monster = {(255, 0, 0):0, (255, 0, 255):0, (0, 255, 255):0, (255, 180,0):0}
+        # self.monster = {(255, 0, 0):0, (255, 0, 255):0, (0, 255, 255):0, (255, 180,0):0}
+        self.monster = {(255, 0, 0):0}
+        self.scatterPosition = {(255, 0, 0):[1, 1], (255, 0, 255):[1, 23], (0, 255, 255):[23, 1], (255, 180,0):[23, 23]}
         
     def generateMonster(self, monsterList):
         num = len(monsterList)
@@ -56,6 +59,7 @@ class cMonsterGenerator(cBody):
                 tmp = cMonster()
                 tmp.setColor(*c)
                 tmp.setPosition(*self.position)
+                tmp.setScatterPosition(*self.scatterPosition[c])
                 monsterList.append(tmp)
 
 class cMovingBody(cBody):
@@ -115,33 +119,32 @@ class cPacMan(cMovingBody):
     
     
 class cMonster(cMovingBody):
-    #path finding
     def __init__(self):
         cMovingBody.__init__(self)
-		#chase, scatter, frightened
-		#in chase mode, monster run towards pacman
-		#in scatter mode, monster moves towards a specific position
-		#in frightened mode, monster runs on random
-		self.state = "Chase"
-		self.scatterPosition = [0, 0]
-		self.scatterTime = 0
-		
-		
-		self.timer = cTimer()
-		self.timer.initialTimer()
-		self.timer.timerStart(20)
-		
-	
+        #chase, scatter, frightened
+        #in chase mode, monster run towards pacman
+        #in scatter mode, monster moves towards a specific position
+        #in frightened mode, monster runs on random
+        self.state = "Chase"
+        self.scatterPosition = [0, 0]
+        self.scatterTime = 0
+        
+        
+        self.timer = cTimer()
+        self.timer.initialTimer()
+        self.timer.timerStart(20)
         
     def chooseDirection(self, _map, getValue):
+        #randomly choose one directiong from possible direction
+        #using value function getValue
         x, y = self.position[0], self.position[1]
         curValue = getValue(*self.position)
         posDirect = []
         dir = [[0, 1], [1, 0], [0, -1], [-1, 0]]
-		
-		#monster can not turn back unless state change
-		dir.remove([-self.direction[0], -self.direction[1]])
-		
+        
+        #monster can not turn back unless state change
+        dir.remove([-self.direction[0], -self.direction[1]])
+        
         for i in dir:
             newPos = [x + i[0], y + i[1]]
             if _map.legalCheck(*newPos):
@@ -154,12 +157,12 @@ class cMonster(cMovingBody):
         if posDirect:
             nextMove = posDirect[int(random()*len(posDirect))]
         else:
-            r = int(random() * 4)
-            nextMove = dir[r]
+            nextMove = dir[int(random() * len(dir))]
         return nextMove
                             
     
     def dfsPathFinding(self, tx, ty, _map):
+        #using dfs to find the shortest path
         dfsValue = [0 for i in range(len(_map.map))]
         maxValue = _map.mapSize[0] * _map.mapSize[1] + 1
     
@@ -198,81 +201,121 @@ class cMonster(cMovingBody):
         
         
         return self.chooseDirection(_map, getDFSvalue)
-		
-	def setState(self, state):
-		self.state = state
-		
-	def frightenedPathFinding(self, map):
-		pass
-	
-	def ai(self, map):
-		if self.state == "Chase":
-			tmp = map.pacman.getPosition()
-			return self.dfsPathFinding(tmp[0], tmp[1], map)
-		elif self.state == "Scatter":
-			return self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
-		elif self.state == "Frightened":
-			return self.frightenedPathFinding(map)
-		
-		return
-			
-	def changeState(self):
-		if not self.timer.isFinished():
-			return
+        
+    def setState(self, state):
+        #change monster state
+        
+        #reverse direction when state change occured    
+        if self.state != state:
+            self.setDirection([-self.direction[0], -self.direction[1]])
+            
+            #change into frightened mode will pause timer
+            if state == "Frightened":
+                self.timer.timerPause()
+            else:
+                self.timer.timerContinue()
+    
+        self.state = state
+        
+    def frightenedPathFinding(self, map):
+        x, y = self.position[0], self.position[1]
+        dir = [[0, 1], [1, 0], [0, -1], [-1, 0]]
+        
+        #monster can not turn back unless state change
+        dir.remove([-self.direction[0], -self.direction[1]])
+        
+        for i in dir:
+            newPos = [x + i[0], y + i[1]]
+            if not _map.legalCheck(*newPos):
+                dir.remove(i)
 
-		if self.state == "Chase" and self.scatterTime < 4: # change from Chase mode to scatter mode
-			if self.scatterTime < 2:
-				self.timerStart(7)
-			else:
-				self.timerStart(5)
-			self.setState("Scatter")
-		elif self.state == "Scatter":
-			self.scatterTime += 1
-			self.timerStart(20)
-			self.setState("Chase")
-		else:
-			pass
-			
-		return
-		
-		
-	def setScatterPosition(self, *p):
-		self.scatterPosition[0] = p[0]
-		self.scatterPosition[1] = p[1]
+        nextMove = dir[int(random()*len(dir))]
+        return nextMove
+    
+    def move(self, map):
+    
+        #debug
+        if _statedebug_:
+            print(self.state, self.direction)
+            fill(*self.color)
+            ellipse(40*self.scatterPosition[0] + 20, 20 + 40*self.scatterPosition[1], 40, 40)
+            
+    
+        #check state before moving
+        self.changeState()
+    
+        #get moving direction
+        nextMove = []
+        if self.state == "Chase":
+            tmp = map.pacman.getPosition()
+            nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
+        elif self.state == "Scatter":
+            nextMove = self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
+        elif self.state == "Frightened":
+            nextMove = self.frightenedPathFinding(map)
+            
+        self.setDirection(nextMove)
+        
+        cMovingBody.move(self, map)
+            
+    def changeState(self):
+        if not self.timer.isFinished():
+            return
+
+        if self.state == "Chase" and self.scatterTime < 4: # change from Chase mode to scatter mode
+            if self.scatterTime < 2:
+                self.timer.timerStart(7)
+            else:
+                self.timer.timerStart(5)
+            self.setState("Scatter")
+        elif self.state == "Scatter":
+            self.scatterTime += 1
+            self.timer.timerStart(20)
+            self.setState("Chase")
+        else:
+            pass
+            
+        return
+        
+        
+    def setScatterPosition(self, *p):
+        self.scatterPosition[0] = p[0]
+        self.scatterPosition[1] = p[1]
         
 class cDeadMonster(cMovingBody):
     pass
-	
+    
 class cTimer():
-	def __init__(self):
-		self.startTime = 0
-		self.interval = 0
-		self.pauseTime = 0
-		
-	def initialTimer(self):
-		self.startTime = 0
-		self.interval = 0
-		self.pauseTime = 0
-		
-	def setInterval(self, t):
-		self.interval = t
-		
-	def timerStart(self, interval = 20):
-		self.setInterval(interval)
-		self.startTime = time.time()
-		
-	def isFinished(self):
-		if self.pauseTime > 0:
-			return False
-		return time.time() - self.startTime > self.interval
-		
-	def timerPause(self):
-		self.pauseTime = time.time()
-		
-	def timerContinue(self):
-		self.interval += time.time() - self.pauseTime
-		self.pauseTime = 0
-		
+    def __init__(self):
+        self.startTime = 0
+        self.interval = 0
+        self.pauseTime = 0
+        
+    def initialTimer(self):
+        self.startTime = 0
+        self.interval = 0
+        self.pauseTime = 0
+        
+    def setInterval(self, t):
+        self.interval = t
+        
+    def timerStart(self, interval = 20):
+        self.setInterval(interval)
+        self.startTime = time.time()
+        
+    def isFinished(self):
+        if self.pauseTime > 0:
+            return False
+        return time.time() - self.startTime > self.interval
+        
+    def timerPause(self):
+        self.pauseTime = time.time()
+        
+    def timerContinue(self):
+        if self.pauseTime != 0:
+            self.interval += time.time() - self.pauseTime
+        self.pauseTime = 0
+        
 class cFood(cBody):
     def __init__(self):
         cBody.__init__(self)
@@ -409,9 +452,9 @@ class cMap():
             c[1] += self.mapSize[1]
             
         return c
-		
-	def getItemInPosition(self, x, y):
-		return self.map[y * _map.mapSize[0] + x]
+        
+    def getItemInPosition(self, x, y):
+        return self.map[y * _map.mapSize[0] + x]
     
 class cCore():
     def __init__(self):
@@ -424,11 +467,11 @@ class cCore():
         
         #chooseDirection
         # self.map.pathFindingMap()
-        p = self.map.pacman.getPosition()
-        for m in self.map.monster:
+        # p = self.map.pacman.getPosition()
+        # for m in self.map.monster:
             # dir = m.chooseDirection(self.map)
-            dir = m.dfsPathFinding(p[0], p[1], self.map)
-            m.setDirection(dir)
+            # dir = m.dfsPathFinding(p[0], p[1], self.map)
+            # m.setDirection(dir)
         
         #move monster
         for i in self.map.monster:
