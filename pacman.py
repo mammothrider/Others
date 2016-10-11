@@ -10,6 +10,7 @@ import time
 
 _debug_ = 0
 _statedebug_ = 1
+_energizedDebug_ = 1
 
 class cBody(object):
     def __init__(self):
@@ -33,27 +34,22 @@ class cBody(object):
     def setPosition(self, *p):
         self.position[0], self.position[1] = p[0], p[1]
         
+        
+        
 class cMonsterGenerator(cBody):
     def __init__(self):
         #four monster is needed, their color should be red, cyan, pink, orange
-        #0 means ready to generate, -1 means cooldown, 1 means has been generated
+        #0 means ready to generate, 1 means has been generated
         cBody.__init__(self)
         # self.monster = {(255, 0, 0):0, (255, 0, 255):0, (0, 255, 255):0, (255, 180,0):0}
         self.monster = {(255, 0, 0):0}
+        self.monsterTimer = {}
         self.scatterPosition = {(255, 0, 0):[1, 1], (255, 0, 255):[1, 23], (0, 255, 255):[23, 1], (255, 180,0):[23, 23]}
         
-    def generateMonster(self, monsterList):
-        num = len(monsterList)
-        if num > 3:
-            return
-            
+        
+    def initialMonster(self, monsterList):
+        #first time generate
         tmp = 0
-        for m in monsterList:
-            c = m.getColor()
-            c = tuple(c)
-            if c in self.monster:
-                self.monster[c] = 1
-            
         for c in self.monster:
             if self.monster[c] == 0:
                 tmp = cMonster()
@@ -61,14 +57,45 @@ class cMonsterGenerator(cBody):
                 tmp.setPosition(*self.position)
                 tmp.setScatterPosition(*self.scatterPosition[c])
                 monsterList.append(tmp)
+                self.monster[c] = 1
+        
+    def reviveMonster(self, monsterList):
+        #check monster state
+        for m in monsterList:
+            c = m.getColor()
+            c = tuple(c)
+            if c in self.monster \
+            and (self.monster[c] == 0 \
+            # in nest
+                    and m.getState() == "Dead" \
+                    #dead
+                    and self.monsterTimer[c].isFinished()): 
+                    #ready to generate
+                self.monster[c] = 1
+                m.setState("Chase")
+                
+
+                
+    def recycle(self, monster):
+        color = tuple(monster.getColor())
+        if monster.getState() == "Dead" \
+        and self.monster[color] == 1 \
+        and monster.getPosition() == self.getPosition():
+            self.monsterTimer[color] = cTimer()
+            self.monsterTimer[color].timerStart(20)
+            self.monster[color] = 0 #cooldown
+            
+            
+                
+                
 
 class cMovingBody(cBody):
     def __init__(self):
         cBody.__init__(self)
-        self.direction = [0, 1]
-        self.nextDirection = [0, 1]
+        self.direction = [0, -1]
+        self.nextDirection = [0, -1]
         self.movingState = 1
-        self.velocity = 0.1
+        self.velocity = 0.005
         self.percentage = 0
         self.deathFlag = 0
         
@@ -77,8 +104,7 @@ class cMovingBody(cBody):
             return
             
         self.percentage += self.velocity
-        #from -0.5 to 0.49
-        while self.percentage > 0.5:
+        while self.percentage >= 1:
             next = [self.position[0] + self.direction[0], \
                     self.position[1] + self.direction[1]]
             if not map.blocked(*next):
@@ -97,9 +123,6 @@ class cMovingBody(cBody):
     
     def getDirect(self):
         return self.direction
-    
-    def getState(self):
-        return self.movingState
         
     def setVelocity(self, v):
         self.velocity = v
@@ -110,11 +133,50 @@ class cPacMan(cMovingBody):
         #super(cPacMan, self).__init__(self)
         self.setColor(255, 255, 0)
         self.startPoint = [0, 0]
-        
+        self.score = 0
+        self.timer = cTimer()
+        self.energized = False
+    
         
     def setStartPosition(self, *p):
         self.setPosition(*p)
         self.startPoint[0], self.startPoint[1] = p[0], p[1]
+        
+    def move(self, map):
+        #move one step forward
+        cMovingBody.move(self, map)
+        
+        if _energizedDebug_:
+            self.energized = True
+            map.energized()
+        
+        #check if on a food
+        food = map.getItemInPosition(self.position[0], self.position[1])
+        self.eat(food, map)
+        
+        
+        
+        #timer for energized
+        if self.timer.isFinished():
+            self.energized = False
+            map.deenergized()
+        
+    def eat(self, food, map):
+        if type(food) == cBody:
+            return
+            
+        elif type(food) == cFood:
+            self.score += 10
+            
+        elif type(food) == cSuperFood:
+            self.score += 50
+            self.energized = True
+            map.energized()
+            self.timer.timerStart(20)
+            
+        map.foodEaten(food)
+            
+        
         
     
     
@@ -144,6 +206,9 @@ class cMonster(cMovingBody):
         
         #monster can not turn back unless state change
         dir.remove([-self.direction[0], -self.direction[1]])
+        
+        if _statedebug_:
+            print(dir)
         
         for i in dir:
             newPos = [x + i[0], y + i[1]]
@@ -226,19 +291,24 @@ class cMonster(cMovingBody):
         
         for i in dir:
             newPos = [x + i[0], y + i[1]]
-            if not _map.legalCheck(*newPos):
+            if not map.legalCheck(*newPos) \
+                or map.blocked(*newPos):
                 dir.remove(i)
 
+        if _statedebug_:
+            print(dir)
+            
         nextMove = dir[int(random()*len(dir))]
         return nextMove
     
     def move(self, map):
-    
+        cMovingBody.move(self, map)
+        
         #debug
         if _statedebug_:
-            print(self.state, self.direction)
-            fill(*self.color)
-            ellipse(40*self.scatterPosition[0] + 20, 20 + 40*self.scatterPosition[1], 40, 40)
+            print(self.state, self.direction, self.nextDirection)
+            # fill(*self.color)
+            # ellipse(40*self.scatterPosition[0] + 20, 20 + 40*self.scatterPosition[1], 40, 40)
             
     
         #check state before moving
@@ -253,10 +323,18 @@ class cMonster(cMovingBody):
             nextMove = self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
         elif self.state == "Frightened":
             nextMove = self.frightenedPathFinding(map)
+        elif self.state == "Dead":
+            tmp = map.monsterGenerator.getPosition()
+            if self.getPosition != tmp:
+                nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
             
         self.setDirection(nextMove)
         
-        cMovingBody.move(self, map)
+    # def setDirection(self, nextMove):
+        # only left or right turn
+        # if self.direction[0] * nextMove[0] + self.direction[1] * nextMove[1] == 0:
+            # self.direction[0] = nextMove[0]
+            # self.direction[1] = nextMove[1]
             
     def changeState(self):
         if not self.timer.isFinished():
@@ -277,13 +355,14 @@ class cMonster(cMovingBody):
             
         return
         
+    def getState(self):
+        return self.state
+        
         
     def setScatterPosition(self, *p):
         self.scatterPosition[0] = p[0]
         self.scatterPosition[1] = p[1]
-        
-class cDeadMonster(cMovingBody):
-    pass
+    
     
 class cTimer():
     def __init__(self):
@@ -306,6 +385,8 @@ class cTimer():
     def isFinished(self):
         if self.pauseTime > 0:
             return False
+        if self.startTime == 0:
+            return False
         return time.time() - self.startTime > self.interval
         
     def timerPause(self):
@@ -321,6 +402,9 @@ class cFood(cBody):
         cBody.__init__(self)
         self.setColor(255, 255, 0)
         return
+        
+class cSuperFood(cFood):
+    pass
     
 class cWall(cBody):
     def __init__(self):
@@ -453,17 +537,27 @@ class cMap():
             
         return c
         
+    def foodEaten(self, food):
+        x, y = food.getPosition()
+        self.map[y * self.mapSize[0] + x] = cBody()
+        
+    def energized(self):
+        for i in self.monster:
+            i.setState("Frightened")
+        
     def getItemInPosition(self, x, y):
-        return self.map[y * _map.mapSize[0] + x]
+        return self.map[y * self.mapSize[0] + x]
     
 class cCore():
     def __init__(self):
         self.map = cMap()
         self.map.initializeMap()
+        #generate monster
+        self.map.monsterGenerator.initialMonster(self.map.monster)
         
     def gameRun(self):
-        #generate monster
-        self.map.monsterGenerator.generateMonster(self.map.monster)
+        #revive dead monster
+        self.map.monsterGenerator.reviveMonster(self.map.monster)
         
         #chooseDirection
         # self.map.pathFindingMap()
@@ -503,12 +597,12 @@ class cGUI():
         ellipse(center[0], center[1], radius, radius)
         
         direct = pac.getDirect() #right -> 1, 0
-        state = pac.getState() #moving state
+        state = pac.movingState #moving state
         mouthSize = int(state * 1.0 / 10 * self.pixalSize)
         
         fill(*self.background) #fill with background color
         if direct[1] == 0:
-            trangle(center[0], center[1], \
+            triangle(center[0], center[1], \
                 center[0] + direct[0] * self.pixalSize/2, center[1] + mouthSize, \
                 center[0] + direct[0] * self.pixalSize/2, center[1] - mouthSize)
         else:
@@ -519,14 +613,39 @@ class cGUI():
     def drawMonster(self, monster):
         mapx, mapy = monster.getPosition()
         topLeft = (mapx * self.pixalSize, mapy * self.pixalSize)
-        rectSize = [int(self.pixalSize * 0.6), int(self.pixalSize * 0.6)]
-        margin = int((self.pixalSize - rectSize[0])/2)
-        radius = int(self.pixalSize * 0.2)
         
-        noStroke()
-        color = monster.getColor()
-        fill(*color)
-        rect(topLeft[0], topLeft[1], rectSize[0], rectSize[1], radius, radius, 0, 0)
+        
+        def drawBody(color):
+            #body
+            rectSize = [int(self.pixalSize * 0.6), int(self.pixalSize * 0.6)] #length * width
+            margin = int((self.pixalSize - rectSize[0])/2)
+            radius = int(self.pixalSize * 0.2)
+            
+            noStroke()
+            fill(*color)
+            rect(topLeft[0], topLeft[1], rectSize[0], rectSize[1], radius, radius, 0, 0)
+            
+            #foot
+            if monster.movingState == 1:
+                triangle(topLeft[0], topLeft[1] + rectSize[0], \
+                    topLeft[0] + rectSize[1] / 2, topLeft[1] + rectSize[0], \
+                    topLeft[0] + rectSize[1] / 4, topLeft[1] + rectSize[0] + self.pixalSize * 0.1)
+                triangle(topLeft[0] + rectSize[1], topLeft[1] + rectSize[0], \
+                    topLeft[0] + rectSize[1] / 2, topLeft[1] + rectSize[0], \
+                    topLeft[0] + rectSize[1] * 3 / 4, topLeft[1] + rectSize[0] + self.pixalSize * 0.1)
+                    
+        
+        if monster.getState() == "Dead":
+            #only monster eyes
+            drawBody([255, 255, 255])
+            
+            
+        elif monster.getState() == "Frightened":
+            drawBody([0, 0, 255])
+        else:
+            drawBody(monster.getColor())
+            
+            
         
     def drawWall(self, wall):
         mapx, mapy = wall.getPosition()
@@ -575,48 +694,29 @@ gui = cGUI(1000, 1000, [0, 0, 0])
 con = cCore()
    
 def setup():
-  size(1000, 1000)
-  background(0, 0, 0)
+    size(1000, 1000)
+    background(0, 0, 0)
 
 
 def draw():
-  background(0, 0, 0)
-  con.gameRun()
-  gui.drawMap(con.map)  
+    background(0, 0, 0)
+    con.gameRun()
+    gui.drawMap(con.map)    
     
 def keyPressed():
-    global map, game_state, playerNumber
-    if keyboard.key == "1":
-        if game_state == 0 or game_state == 3:
-            game_state = 1
-            playerNumber = 1
-    elif keyboard.key == "2":
-        if game_state == 0 or game_state == 3:
-            game_state = 1
-            playerNumber = 2
-            
-    elif keyboard.keyCode == 32:
-        if game_state == 0 or game_state == 3:
-            game_state = 0
-
-    #Player 1 -- White and Red
-    elif keyboard.keyCode == 38:
-        map.changeSnakeDirection(0, [0, -1])
-    elif keyboard.keyCode == 40:
-        map.changeSnakeDirection(0, [0, 1])
-    elif keyboard.keyCode == 37:
-        map.changeSnakeDirection(0, [-1, 0])
-    elif keyboard.keyCode == 39:
-        map.changeSnakeDirection(0, [1, 0])
-    
-    #Player 2 -- Green  
-    elif keyboard.keyCode == 87:
-        map.changeSnakeDirection(1, [0, -1])
-    elif keyboard.keyCode == 83:
-        map.changeSnakeDirection(1, [0, 1])
-    elif keyboard.keyCode == 65:
-        map.changeSnakeDirection(1, [-1, 0])
-    elif keyboard.keyCode == 68:
-        map.changeSnakeDirection(1, [1, 0])
+    global con
+      
+    if keyCode == UP:
+        print(UP)
+        con.map.pacman.setDirection([0, -1])
+    elif keyCode == DOWN:
+        print(DOWN)
+        con.map.pacman.setDirection([0, 1])
+    elif keyCode == LEFT:
+        print(LEFT)
+        con.map.pacman.setDirection([-1, 0])
+    elif keyCode == RIGHT:
+        print(RIGHT)
+        con.map.pacman.setDirection([1, 0])
     
 run()
