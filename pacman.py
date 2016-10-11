@@ -95,7 +95,7 @@ class cMovingBody(cBody):
         self.direction = [0, -1]
         self.nextDirection = [0, -1]
         self.movingState = 1
-        self.velocity = 0.005
+        self.velocity = 0.05
         self.percentage = 0
         self.deathFlag = 0
         
@@ -136,11 +136,15 @@ class cPacMan(cMovingBody):
         self.score = 0
         self.timer = cTimer()
         self.energized = False
+        self.life = 3
     
         
     def setStartPosition(self, *p):
         self.setPosition(*p)
         self.startPoint[0], self.startPoint[1] = p[0], p[1]
+        
+        if _energizedDebug_:
+            self.setPosition(1, 1)
         
     def move(self, map):
         #move one step forward
@@ -154,6 +158,13 @@ class cPacMan(cMovingBody):
         food = map.getItemInPosition(self.position[0], self.position[1])
         self.eat(food, map)
         
+        #check if on a monster
+        monster = map.getMonsterOnPacman()
+        if monster:
+            if monster.getState() not in ["Frightened", "Dead"]:
+                self.death()
+            else:
+                self.eatMonster(monster, map)
         
         
         #timer for energized
@@ -175,8 +186,15 @@ class cPacMan(cMovingBody):
             self.timer.timerStart(20)
             
         map.foodEaten(food)
-            
         
+    def eatMonster(self, monster, map):
+        self.score += 200
+        monster.setState("Dead")
+            
+    def death(self):
+        self.life -= 1
+        if self.life > 0:
+            self.setPosition(*self.startPoint)
         
     
     
@@ -270,8 +288,15 @@ class cMonster(cMovingBody):
     def setState(self, state):
         #change monster state
         
+        #dead monster can only be change to chase
+        if self.state == "Dead":
+            if state == "Chase":
+                self.state = state
+                self.timer.timerStart(20)
+            return
+        
         #reverse direction when state change occured    
-        if self.state != state:
+        elif self.state != state:
             self.setDirection([-self.direction[0], -self.direction[1]])
             
             #change into frightened mode will pause timer
@@ -327,6 +352,8 @@ class cMonster(cMovingBody):
             tmp = map.monsterGenerator.getPosition()
             if self.getPosition != tmp:
                 nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
+            else:
+                return
             
         self.setDirection(nextMove)
         
@@ -547,6 +574,12 @@ class cMap():
         
     def getItemInPosition(self, x, y):
         return self.map[y * self.mapSize[0] + x]
+        
+    def getMonsterOnPacman(self):
+        for m in self.monster:
+            if m.getPosition() == self.pacman.getPosition():
+                return m
+        return None
     
 class cCore():
     def __init__(self):
