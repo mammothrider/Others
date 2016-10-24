@@ -45,7 +45,7 @@ class cMonsterGenerator(cBody):
         self.monster = {(255, 0, 0):0}
         self.monsterTimer = {}
         self.scatterPosition = {(255, 0, 0):[1, 1], (255, 0, 255):[1, 23], (0, 255, 255):[23, 1], (255, 180,0):[23, 23]}
-        
+        self.velocity = 0.05
         
     def initialMonster(self, monsterList):
         #first time generate
@@ -56,6 +56,7 @@ class cMonsterGenerator(cBody):
                 tmp.setColor(*c)
                 tmp.setPosition(*self.position)
                 tmp.setScatterPosition(*self.scatterPosition[c])
+                tmp.setVelocity(self.velocity)
                 monsterList.append(tmp)
                 self.monster[c] = 1
         
@@ -73,6 +74,7 @@ class cMonsterGenerator(cBody):
                     #ready to generate
                 self.monster[c] = 1
                 m.setState("Chase")
+                m.setVelocity(self.velocity)
                 
 
                 
@@ -84,6 +86,7 @@ class cMonsterGenerator(cBody):
             self.monsterTimer[color] = cTimer()
             self.monsterTimer[color].timerStart(20)
             self.monster[color] = 0 #cooldown
+            monster.setVelocity(0)
             
             
                 
@@ -162,7 +165,8 @@ class cPacMan(cMovingBody):
         monster = map.getMonsterOnPacman()
         if monster:
             if monster.getState() not in ["Frightened", "Dead"]:
-                self.death()
+                if self.death():
+                    map.gameEnd()
             else:
                 self.eatMonster(monster, map)
         
@@ -195,6 +199,8 @@ class cPacMan(cMovingBody):
         self.life -= 1
         if self.life > 0:
             self.setPosition(*self.startPoint)
+            return True
+        return False
         
     
     
@@ -314,54 +320,61 @@ class cMonster(cMovingBody):
         #monster can not turn back unless state change
         dir.remove([-self.direction[0], -self.direction[1]])
         
-        for i in dir:
-            newPos = [x + i[0], y + i[1]]
-            if not map.legalCheck(*newPos) \
-                or map.blocked(*newPos):
-                dir.remove(i)
+        #bug: remove second item makes for=loop skip third one
+        # for i in dir:
+            # if map.blocked(x + i[0], y + i[1]):
+                # print(i, 'removed')
+                # dir.remove(i)
+        dir = [i for i in dir if not map.blocked(x + i[0], y + i[1])]
 
         if _statedebug_:
-            print(dir)
+            print(self.position, dir)
             
-        nextMove = dir[int(random()*len(dir))]
+        if dir: 
+            nextMove = dir[int(random()*len(dir))]
+        else:
+            nextMove = [-self.direction[0], -self.direction[1]]
         return nextMove
     
-    def move(self, map):
-        cMovingBody.move(self, map)
-        
-        #debug
-        if _statedebug_:
-            print(self.state, self.direction, self.nextDirection)
-            # fill(*self.color)
-            # ellipse(40*self.scatterPosition[0] + 20, 20 + 40*self.scatterPosition[1], 40, 40)
-            
-    
+    def move(self, map):        
         #check state before moving
         self.changeState()
     
-        #get moving direction
-        nextMove = []
-        if self.state == "Chase":
-            tmp = map.pacman.getPosition()
-            nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
-        elif self.state == "Scatter":
-            nextMove = self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
-        elif self.state == "Frightened":
-            nextMove = self.frightenedPathFinding(map)
-        elif self.state == "Dead":
-            tmp = map.monsterGenerator.getPosition()
-            if self.getPosition != tmp:
+        self.percentage += self.velocity
+        if self.percentage >= 1:
+            #get moving direction
+            nextMove = []
+            if self.state == "Chase":
+                tmp = map.pacman.getPosition()
                 nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
-            else:
-                return
+            elif self.state == "Scatter":
+                nextMove = self.dfsPathFinding(self.scatterPosition[0], self.scatterPosition[1], map)
+            elif self.state == "Frightened":
+                nextMove = self.frightenedPathFinding(map)
+            elif self.state == "Dead":
+                tmp = map.monsterGenerator.getPosition()
+                if self.getPosition() != tmp:
+                    nextMove = self.dfsPathFinding(tmp[0], tmp[1], map)
+                else:
+                    map.recycleDeadMonster(self)
+                    return
             
-        self.setDirection(nextMove)
-        
-    # def setDirection(self, nextMove):
-        # only left or right turn
-        # if self.direction[0] * nextMove[0] + self.direction[1] * nextMove[1] == 0:
-            # self.direction[0] = nextMove[0]
-            # self.direction[1] = nextMove[1]
+            #set direction
+            self.setDirection(nextMove)
+            self.changeDirection()
+            
+            #move one step
+            next = [self.position[0] + self.direction[0], \
+                    self.position[1] + self.direction[1]]
+            if not map.blocked(*next):
+                self.position[0] = next[0]
+                self.position[1] = next[1]
+            
+            self.percentage -= 1
+            
+            #debug
+            if _statedebug_:
+                print(self.state, self.direction)
             
     def changeState(self):
         if not self.timer.isFinished():
@@ -580,6 +593,12 @@ class cMap():
             if m.getPosition() == self.pacman.getPosition():
                 return m
         return None
+        
+    def recycleDeadMonster(self, monster):
+        self.monsterGenerator.recycle(monster)
+        
+    def gameEnd(self):
+        pass
     
 class cCore():
     def __init__(self):
@@ -752,4 +771,4 @@ def keyPressed():
         print(RIGHT)
         con.map.pacman.setDirection([1, 0])
     
-run()
+#run()
