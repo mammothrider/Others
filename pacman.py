@@ -41,8 +41,8 @@ class cMonsterGenerator(cBody):
         #four monster is needed, their color should be red, cyan, pink, orange
         #0 means ready to generate, 1 means has been generated
         cBody.__init__(self)
-        # self.monster = {(255, 0, 0):0, (255, 0, 255):0, (0, 255, 255):0, (255, 180,0):0}
-        self.monster = {(255, 0, 0):0}
+        self.monster = {(255, 0, 0):0, (255, 0, 255):0, (0, 255, 255):0, (255, 180,0):0}
+        # self.monster = {(255, 0, 0):0}
         self.monsterTimer = {}
         self.scatterPosition = {(255, 0, 0):[1, 1], (255, 0, 255):[1, 23], (0, 255, 255):[23, 1], (255, 180,0):[23, 23]}
         self.velocity = 0.05
@@ -84,11 +84,12 @@ class cMonsterGenerator(cBody):
         and self.monster[color] == 1 \
         and monster.getPosition() == self.getPosition():
             self.monsterTimer[color] = cTimer()
-            self.monsterTimer[color].timerStart(20)
+            self.monsterTimer[color].timerStart(5)
             self.monster[color] = 0 #cooldown
             monster.setVelocity(0)
             
-            
+    def setVelocity(self, v):
+        self.velocity = v
                 
                 
 
@@ -129,6 +130,8 @@ class cMovingBody(cBody):
         
     def setVelocity(self, v):
         self.velocity = v
+        #self.percentage = 0
+        #print("speed set to", v)
 
 class cPacMan(cMovingBody):
     def __init__(self):
@@ -150,31 +153,37 @@ class cPacMan(cMovingBody):
             self.setPosition(1, 1)
         
     def move(self, map):
+        #check twice, two situation: p -> m, m -> p. Otherwise will sometime cause meeting and missing
+        self.checkMonster(map)
+    
         #move one step forward
         cMovingBody.move(self, map)
         
         if _energizedDebug_:
             self.energized = True
+            self.velocity = 0.08
             map.energized()
         
         #check if on a food
         food = map.getItemInPosition(self.position[0], self.position[1])
         self.eat(food, map)
         
+        self.checkMonster(map)
+        
+        #timer for energized
+        if self.timer.isFinished():
+            self.energized = False
+            map.deenergized()
+            
+    def checkMonster(self, map):
         #check if on a monster
         monster = map.getMonsterOnPacman()
         if monster:
             if monster.getState() not in ["Frightened", "Dead"]:
                 if self.death():
                     map.gameEnd()
-            else:
+            elif monster.getState() == "Frightened":
                 self.eatMonster(monster, map)
-        
-        
-        #timer for energized
-        if self.timer.isFinished():
-            self.energized = False
-            map.deenergized()
         
     def eat(self, food, map):
         if type(food) == cBody:
@@ -194,6 +203,7 @@ class cPacMan(cMovingBody):
     def eatMonster(self, monster, map):
         self.score += 200
         monster.setState("Dead")
+        monster.setVelocity(map.standardVelocity * 2)
             
     def death(self):
         self.life -= 1
@@ -202,6 +212,11 @@ class cPacMan(cMovingBody):
             return True
         return False
         
+    def isAlive(self):
+        return self.life > 0
+        
+    def getScore(self):
+        return self.score
     
     
 class cMonster(cMovingBody):
@@ -224,30 +239,22 @@ class cMonster(cMovingBody):
         #randomly choose one directiong from possible direction
         #using value function getValue
         x, y = self.position[0], self.position[1]
-        curValue = getValue(*self.position)
-        posDirect = []
         dir = [[0, 1], [1, 0], [0, -1], [-1, 0]]
         
         #monster can not turn back unless state change
         dir.remove([-self.direction[0], -self.direction[1]])
         
-        if _statedebug_:
-            print(dir)
-        
+        minValue = 9999
+        next = self.direction
         for i in dir:
             newPos = [x + i[0], y + i[1]]
-            if _map.legalCheck(*newPos):
+            if not _map.blocked(*newPos):
                 tmpValue = getValue(*newPos)
-                if tmpValue < curValue:
-                    posDirect.append(i)
-                    
-            if _debug_:
-                print(i, tmpValue, curValue)
-        if posDirect:
-            nextMove = posDirect[int(random()*len(posDirect))]
-        else:
-            nextMove = dir[int(random() * len(dir))]
-        return nextMove
+                if tmpValue < minValue:
+                    next = i
+                    minValue = tmpValue
+        
+        return next
                             
     
     def dfsPathFinding(self, tx, ty, _map):
@@ -288,6 +295,10 @@ class cMonster(cMovingBody):
             
         dfs(tx, ty, 0)
         
+        if _debug_:
+            for x in range(map.mapSize[1]):
+                for y in range(map.mapSize[0]):
+                    drawNumber(x, y, getDFSvalue(x, y))
         
         return self.chooseDirection(_map, getDFSvalue)
         
@@ -329,7 +340,8 @@ class cMonster(cMovingBody):
 
         if _statedebug_:
             print(self.position, dir)
-            
+        
+        #in case empty
         if dir: 
             nextMove = dir[int(random()*len(dir))]
         else:
@@ -340,6 +352,8 @@ class cMonster(cMovingBody):
         #check state before moving
         self.changeState()
     
+        #check the percentage before the direction
+        #when it moves, it move in the the right direction
         self.percentage += self.velocity
         if self.percentage >= 1:
             #get moving direction
@@ -397,7 +411,6 @@ class cMonster(cMovingBody):
         
     def getState(self):
         return self.state
-        
         
     def setScatterPosition(self, *p):
         self.scatterPosition[0] = p[0]
@@ -481,8 +494,13 @@ class cMap():
                     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \
                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
                     ]
+        self.standardVelocity = 0.05
         self.pacman = cPacMan()
+        self.pacman.setVelocity(self.standardVelocity)
+        
         self.monsterGenerator = cMonsterGenerator()
+        self.monsterGenerator.setVelocity(self.standardVelocity)
+        
         self.monster = []
         self.pfm = [0 for i in range(len(self.map))]
         
@@ -582,8 +600,14 @@ class cMap():
         self.map[y * self.mapSize[0] + x] = cBody()
         
     def energized(self):
+        pacman.setVelocity(self.standardVelocity * 1.5)
         for i in self.monster:
             i.setState("Frightened")
+			
+    def deenergized(self):
+	    pacman.setVelocity(self.standardVelocity)
+		for i in self.monster:
+            i.setState("Chase")
         
     def getItemInPosition(self, x, y):
         return self.map[y * self.mapSize[0] + x]
@@ -626,7 +650,11 @@ class cCore():
         #move pacman
         self.map.pacman.move(self.map)
         
-        #death check
+    def gameContinue(self):
+        return self.map.pacman.isAlive()
+    
+    def returnScore(self):
+        return self.map.pacman.getScore()
         
 class cController():
     pass    
@@ -715,24 +743,22 @@ class cGUI():
         fill(*food.getColor())
         ellipse(center[0], center[1], radius, radius)
         
-    def drawNumber(self, body, map):
-        mapx, mapy = body.getPosition()
-        topLeft = (mapx * self.pixalSize, mapy * self.pixalSize)
-        textSize(20)
-        fill(255)
-        text(map.getPFMvalue(mapx, mapy), topLeft[0], topLeft[1])
+    # def drawNumber(self, body, map):
+        # mapx, mapy = body.getPosition()
+        # topLeft = (mapx * self.pixalSize, mapy * self.pixalSize)
+        # textSize(20)
+        # fill(255)
+        # text(map.getPFMvalue(mapx, mapy), topLeft[0], topLeft[1])
         
     def default(self, obj):
-        if _debug_:
-            print("Enter default function, with type", type(obj))
+        # if _debug_:
+            # print("Enter default function, with type", type(obj))
+        pass
     
     def drawMap(self, _map):
         func = {cWall:self.drawWall, cFood:self.drawFood, cPacMan:self.drawPacman, cMonster:self.drawMonster}
         for i in _map.map + [_map.pacman] + _map.monster:
             func.get(type(i), self.default)(i)
-            
-            if _debug_:
-                self.drawNumber(i, _map)
         
     
 game_state = 0 #0-title, 1-prepare, 2-ingame, 3-game end
