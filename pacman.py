@@ -9,8 +9,8 @@ import time
 #2016.4.12
 
 _debug_ = 0
-_statedebug_ = 1
-_energizedDebug_ = 1
+_statedebug_ = 0
+_energizedDebug_ = 0
 
 class cBody(object):
     def __init__(self):
@@ -50,11 +50,13 @@ class cMonsterGenerator(cBody):
     def initialMonster(self, monsterList):
         #first time generate
         tmp = 0
+        shift = 0
         for c in self.monster:
             if self.monster[c] == 0:
                 tmp = cMonster()
                 tmp.setColor(*c)
-                tmp.setPosition(*self.position)
+                tmp.setPosition(self.position[0], self.position[1] - shift)
+                shift += 1
                 tmp.setScatterPosition(*self.scatterPosition[c])
                 tmp.setVelocity(self.velocity)
                 monsterList.append(tmp)
@@ -116,7 +118,6 @@ class cMovingBody(cBody):
                 self.position[1] = next[1]
             
             self.percentage -= 1
-            self.changeDirection()
     
     def changeDirection(self):
         self.direction[0] = self.nextDirection[0]
@@ -124,6 +125,7 @@ class cMovingBody(cBody):
         
     def setDirection(self, x):
         self.nextDirection = x
+        self.changeDirection()
     
     def getDirect(self):
         return self.direction
@@ -253,8 +255,12 @@ class cMonster(cMovingBody):
                 if tmpValue < minValue:
                     next = i
                     minValue = tmpValue
-        
-        return next
+                    
+        newPos = [x + next[0], y + next[1]]
+        if not _map.blocked(*newPos):
+            return next
+        else:
+            return [-self.direction[0], -self.direction[1]]
                             
     
     def dfsPathFinding(self, tx, ty, _map):
@@ -600,13 +606,13 @@ class cMap():
         self.map[y * self.mapSize[0] + x] = cBody()
         
     def energized(self):
-        pacman.setVelocity(self.standardVelocity * 1.5)
+        self.pacman.setVelocity(self.standardVelocity * 1.5)
         for i in self.monster:
             i.setState("Frightened")
-			
+            
     def deenergized(self):
-	    pacman.setVelocity(self.standardVelocity)
-		for i in self.monster:
+        pacman.setVelocity(self.standardVelocity)
+        for i in self.monster:
             i.setState("Chase")
         
     def getItemInPosition(self, x, y):
@@ -660,10 +666,10 @@ class cController():
     pass    
     
 class cGUI():
-    def __init__(self, screenSizeX, screenSizeY, background):
+    def __init__(self, screenSizeX, screenSizeY, background, core):
         self.screenSize = (screenSizeX, screenSizeY)
-        self.pixalSize = 40
-        self.mapSize = (int(self.screenSize[0]/self.pixalSize), int(self.screenSize[1]/self.pixalSize))
+        self.mapSize = core.map.mapSize
+        self.pixalSize = int(screenSizeX/self.mapSize[0])
         self.background = background
         
     def drawPacman(self, pac):
@@ -762,39 +768,77 @@ class cGUI():
         
     
 game_state = 0 #0-title, 1-prepare, 2-ingame, 3-game end
-map = cMap()
-pixel = 10
-playerNumber = 1
-conti = True
+window_size = 500
+con = gui = 0
 
 
-gui = cGUI(1000, 1000, [0, 0, 0])
-con = cCore()
-   
 def setup():
-    size(1000, 1000)
+    size(window_size, window_size)
     background(0, 0, 0)
 
 
 def draw():
-    background(0, 0, 0)
-    con.gameRun()
-    gui.drawMap(con.map)    
+    global game_state, window_size, con, gui
+    #title
+    if game_state == 0:
+        background(0, 0, 0)
+        textSize(window_size/5)
+        fill(255, 255, 0)
+        text("PACMAN", 40 *window_size/500, 200 *window_size/500)
+        textSize(20)
+        text("1.Game Start", 180 *window_size/500, 270 *window_size/500)
+    
+    elif game_state == 1:
+        con = cCore()
+        gui = cGUI(window_size, window_size, [0, 0, 0], con)
+        game_state = 2
+    
+    elif game_state == 2:
+        if con.gameContinue():
+            background(0, 0, 0)
+            con.gameRun()
+            gui.drawMap(con.map)
+        else:
+            game_state = 3
+        
+    elif game_state == 3:
+        textSize(60)
+        fill(255, 0, 0)
+        text("GAME OVER", 80 *window_size/500, 150 *window_size/500)
+        textSize(30)
+    
+        #score = con.returnScore()
+        score = 100
+        text("Final Score: %d" %(score), 130 *window_size/500, 250 *window_size/500)
+        text("Press Space to return menu", 50 *window_size/500, 350 *window_size/500)
+    else:
+        game_state = 0   
     
 def keyPressed():
-    global con
-      
+    global game_state
+
+    if keyCode == 49:
+        if game_state == 0 or game_state == 3:
+            game_state = 1
+    elif keyCode == 50:
+        if game_state == 0 or game_state == 3:
+            game_state = 1
+            
+    elif keyCode == 32:
+        if game_state == 0 or game_state == 3:
+            game_state = 0
+            
     if keyCode == UP:
-        print(UP)
+        # print(UP)
         con.map.pacman.setDirection([0, -1])
     elif keyCode == DOWN:
-        print(DOWN)
+        # print(DOWN)
         con.map.pacman.setDirection([0, 1])
     elif keyCode == LEFT:
-        print(LEFT)
+        # print(LEFT)
         con.map.pacman.setDirection([-1, 0])
     elif keyCode == RIGHT:
-        print(RIGHT)
+        # print(RIGHT)
         con.map.pacman.setDirection([1, 0])
     
-#run()
+# run()
