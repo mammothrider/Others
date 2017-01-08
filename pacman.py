@@ -807,8 +807,7 @@ def draw():
         text("GAME OVER", 80 *window_size/500, 150 *window_size/500)
         textSize(30)
     
-        #score = con.returnScore()
-        score = 100
+        score = con.returnScore()
         text("Final Score: %d" %(score), 130 *window_size/500, 250 *window_size/500)
         text("Press Space to return menu", 50 *window_size/500, 350 *window_size/500)
     else:
@@ -817,14 +816,11 @@ def draw():
 def keyPressed():
     global game_state
 
-    if keyCode == 49:
-        if game_state == 0 or game_state == 3:
-            game_state = 1
-    elif keyCode == 50:
-        if game_state == 0 or game_state == 3:
+    if keyCode == 49: # key '1'
+        if game_state == 0:
             game_state = 1
             
-    elif keyCode == 32:
+    elif keyCode == 32: # key "Space"
         if game_state == 0 or game_state == 3:
             game_state = 0
             
